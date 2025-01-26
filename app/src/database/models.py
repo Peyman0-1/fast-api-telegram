@@ -1,19 +1,23 @@
+from sqlalchemy.orm import DeclarativeBase
 from enum import Enum
 from sqlalchemy import Enum as AlchemyEnum
 from sqlalchemy import String, BigInteger, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
-from .base_model import BaseModel
 
 
 def get_utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class UserRole(Enum):
+class UserRole(str, Enum):
     SUPERUSER = "superuser"
     ADMIN = "admin"
     USER = "user"
+
+
+class BaseModel(DeclarativeBase):
+    pass
 
 
 class User(BaseModel):
@@ -62,7 +66,7 @@ class User(BaseModel):
         onupdate=get_utc_now,
         nullable=False
     )
-    passowrd: Mapped[str | None] = mapped_column(
+    password: Mapped[str | None] = mapped_column(
         String(128),
         unique=False,
         nullable=True
