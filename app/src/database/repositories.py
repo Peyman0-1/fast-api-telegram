@@ -1,5 +1,6 @@
 from typing import TypeVar, Generic, Type, Optional, List
-from base_model import BaseModel
+from .models import BaseModel
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -16,11 +17,12 @@ class BaseRepository(Generic[T]):
     async def get_by_id(self, id: int) -> Optional[T]:
         return await self.session.get(
             entity=self.model,
-            id=id
+            ident=id
         )
 
     async def get_all(self) -> List[T]:
-        result = await self.session.execute(self.model.select())
+        all_data = await self.session.execute(select(self.model))
+        result = all_data.scalars().all()
         return result
 
     async def create(self, obj_in: dict) -> T:
@@ -32,12 +34,13 @@ class BaseRepository(Generic[T]):
             self.logger.error(e)
             await self.session.rollback()
         else:
-            await self.session.refresh()
+            await self.session.refresh(obj)
+        return obj
 
     async def update(self, id: int, obj_in: dict) -> Optional[T]:
         obj = await self.session.get(
             entity=self.model,
-            id=id
+            ident=id
         )
 
         if not obj:
@@ -58,15 +61,15 @@ class BaseRepository(Generic[T]):
         return obj
 
     async def delete(self, id: int) -> bool:
-        obj = await self.session.get(entity=T, id=id)
+        obj = await self.session.get(entity=self.model, ident=id)
         if not obj:
             return False
 
         try:
-            await self.session.commit()
+            await self.session.delete(obj)
         except SQLAlchemyError as e:
             self.logger.error(e)
             await self.session.rollback()
         else:
-            await self.session.delete(obj)
+            await self.session.commit()
         return True
