@@ -56,12 +56,12 @@ class User(BaseModel):
         nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=get_utc_now,
         nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=get_utc_now,
         onupdate=get_utc_now,
         nullable=False
