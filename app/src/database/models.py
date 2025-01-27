@@ -32,7 +32,7 @@ class User(BaseModel):
         unique=True,
         nullable=True
     )
-    tlegram_username: Mapped[str | None] = mapped_column(
+    telegram_username: Mapped[str | None] = mapped_column(
         String(32),
         unique=True,
         nullable=True
