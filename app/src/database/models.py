@@ -1,7 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase
 from enum import Enum
 from sqlalchemy import Enum as AlchemyEnum
-from sqlalchemy import String, BigInteger, DateTime
+from sqlalchemy import String, BigInteger, DateTime, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 
@@ -66,8 +66,8 @@ class User(BaseModel):
         onupdate=get_utc_now,
         nullable=False
     )
-    password: Mapped[str | None] = mapped_column(
-        String(128),
+    password: Mapped[bytes | None] = mapped_column(
+        LargeBinary(60),
         unique=False,
         nullable=True
     )
