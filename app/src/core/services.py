@@ -97,12 +97,12 @@ class AuthService():
         await user_service.get_user(phone_number)
 
         if not user_service.user:
-            return
+            raise Exception("username or password is incorrect.")
 
         is_password_match = user_service.check_password(password)
 
         if not is_password_match:
-            raise Exception()
+            raise Exception("username or password is incorrect.")
 
         refresh_token = cls.create_refresh_token(
             data={"sub": user_service.user.phone_number}
