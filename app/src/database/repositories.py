@@ -1,6 +1,6 @@
 from typing import TypeVar, Generic, Type, Optional, List
-from .models import BaseModel
-from sqlalchemy import select
+from .models import BaseModel, User
+from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -73,3 +73,28 @@ class BaseRepository(Generic[T]):
         else:
             await self.session.commit()
         return True
+
+    async def bulk_delete(self, list_ids: List[int]) -> None:
+        if len(list_ids) == 0:
+            return
+        try:
+            await self.session.execute(
+                delete(self.model).where(self.model.id.in_(list_ids))
+            )
+            await self.session.commit()
+        except SQLAlchemyError as e:
+            self.logger.error(e)
+            await self.session.rollback()
+        else:
+            await self.session.commit()
+
+
+class UserRepository(BaseRepository):
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, model=User)
+
+    async def get_by_phone(self, phone_number: str) -> Optional[User]:
+        user = await self.session.execute(
+            select(User).filter(User.phone_number == phone_number)
+        )
+        return user.scalar()
