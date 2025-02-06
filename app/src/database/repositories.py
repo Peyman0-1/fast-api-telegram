@@ -31,8 +31,11 @@ class BaseRepository(Generic[T]):
         try:
             await self.session.commit()
         except SQLAlchemyError as e:
-            self.logger.error(e)
+            self.logger.exception(
+                "Database error occurred during object creation."
+            )
             await self.session.rollback()
+            raise e
         else:
             await self.session.refresh(obj)
         return obj
@@ -52,8 +55,11 @@ class BaseRepository(Generic[T]):
         try:
             await self.session.commit()
         except SQLAlchemyError as e:
-            self.logger.error(e)
+            self.logger.exception(
+                "Database error occurred during updating object."
+            )
             await self.session.rollback()
+            raise e
         else:
 
             await self.session.refresh(obj)
@@ -68,8 +74,11 @@ class BaseRepository(Generic[T]):
         try:
             await self.session.delete(obj)
         except SQLAlchemyError as e:
-            self.logger.error(e)
+            self.logger.exception(
+                "Database error occurred during object deletion."
+            )
             await self.session.rollback()
+            raise e
         else:
             await self.session.commit()
         return True
@@ -83,8 +92,11 @@ class BaseRepository(Generic[T]):
             )
             await self.session.commit()
         except SQLAlchemyError as e:
-            self.logger.error(e)
+            self.logger.exception(
+                "Database error occurred during bulk object deletion."
+            )
             await self.session.rollback()
+            raise e
         else:
             await self.session.commit()
 
