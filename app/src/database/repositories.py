@@ -25,6 +25,18 @@ class BaseRepository(Generic[T]):
         result = all_data.scalars().all()
         return result
 
+    async def get_paginated(self,  page: int, page_size: int) -> List[T]:
+        offset = (page - 1) * page_size
+        try:
+            query = select(self.model).offset(offset).limit(page_size)
+            result = await self.session.execute(query)
+        except SQLAlchemyError as e:
+            self.logger.exception(
+                "Database error occurred during object retrivation"
+            )
+            raise e
+        return result.scalars().all()
+
     async def create(self, obj_in: dict) -> T:
         obj = self.model(**obj_in)
         self.session.add(obj)
