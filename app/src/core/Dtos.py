@@ -1,11 +1,13 @@
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from database.models import UserRole
 
 # region User
 
 
 class UserCreateDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     telegram_id: int
     telegram_username: Optional[str] = Field(None, max_length=32)
     phone_number: Optional[str] = Field(None, max_length=15)
