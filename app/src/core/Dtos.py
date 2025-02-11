@@ -1,7 +1,7 @@
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from database.models import UserRole
-
+from datetime import datetime, timezone
 # region User
 
 
@@ -44,12 +44,20 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     phone_number: str | None = None
     role: str | None = None
+    exp: datetime
 
     @classmethod
     def from_payload(cls, payload: dict):
+        exp_timestampt = payload.get("exp")
+        if isinstance(exp_timestampt, int):
+            exp_timestampt = datetime.fromtimestamp(
+                exp_timestampt, timezone.utc
+            )
+
         data = {
             "phone_number": payload.get("sub"),
-            "role": payload.get("role")
+            "role": payload.get("role"),
+            "exp": exp_timestampt
         }
         return cls(**data)
 # endregion

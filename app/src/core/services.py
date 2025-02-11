@@ -1,6 +1,7 @@
 from database.repositories import UserRepository
 from database.models import User, UserRole
 from datetime import timedelta, timezone, datetime
+from cache.services import CacheService
 from . import Dtos
 from os import getenv
 import bcrypt
@@ -34,8 +35,9 @@ class UserService():
             new_user.password = self.hash_password(new_user.password)
         await self.db_repository.create(new_user)
 
-    async def get_user(self, phone_number: str) -> None:
+    async def get_user(self, phone_number: str) -> User | None:
         self.user = await self.db_repository.get_by_phone(phone_number)
+        return self.user
 
 
 class AuthService():
@@ -44,9 +46,13 @@ class AuthService():
     ACCESS_TOKEN_EXPIRE_MINUTES = 15
     REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 
-    @classmethod
+    cache_service: CacheService
+
+    def __init__(self):
+        self.cache_service = CacheService()
+
     def create_access_token(
-        cls,
+        self,
         data: dict,
         expires_delta: timedelta = timedelta(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
@@ -56,11 +62,10 @@ class AuthService():
         expire = datetime.now(timezone.utc) + expires_delta
 
         to_encode.update({"exp": expire})
-        return jwt.encode(to_encode, cls.SECRET_KEY, algorithm=cls.ALGORITHM)
+        return jwt.encode(to_encode, self.SECRET_KEY, algorithm=self.ALGORITHM)
 
-    @classmethod
-    def create_refresh_token(
-        cls,
+    async def create_refresh_token(
+        self,
         data: dict,
         expires_delta: timedelta = timedelta(
             minutes=REFRESH_TOKEN_EXPIRE_MINUTES
@@ -70,25 +75,35 @@ class AuthService():
         expire = datetime.now(timezone.utc) + expires_delta
 
         to_encode.update({"exp": expire})
-        return jwt.encode(to_encode, cls.SECRET_KEY, algorithm=cls.ALGORITHM)
+        encoded_jwt = jwt.encode(
+            to_encode,
+            self.SECRET_KEY,
+            algorithm=self.ALGORITHM
+        )
+        await self.cache_service.set(  # first we set refresh to redis
+            encoded_jwt,
+            expire.__str__(),  # i have no idea taht what should set in value
+            expires_delta
+        )
+        return encoded_jwt
 
-    @staticmethod
-    async def verify_token(cls, token: str) -> Dtos.TokenData:
+    async def verify_token(self, token: str) -> Dtos.TokenData:
+        if (await self.cache_service.is_exists(token)):
+            raise jwt.InvalidTokenError("invalid or expired token")
+
         try:
             decoded_token = jwt.decode(
                 token,
-                cls.SECRET_KEY,
-                algorithms=[cls.ALGORITHM]
+                self.SECRET_KEY,
+                algorithms=[self.ALGORITHM]
             )
         except jwt.PyJWTError as error:
             raise jwt.InvalidTokenError("invalid or expired token") from error
-        # TODO: Check decoded_token in Redis it needs await
-        # if the token not in the redis blacklist be continue
+
         return Dtos.TokenData.from_payload(**decoded_token)
 
-    @classmethod
     async def authenticate(
-        cls,
+        self,
         user_service: UserService,
         phone_number: str,
         password: bytes
@@ -104,10 +119,10 @@ class AuthService():
         if not is_password_match:
             raise Exception("username or password is incorrect.")
 
-        refresh_token = cls.create_refresh_token(
+        refresh_token = await self.create_refresh_token(
             data={"sub": user_service.user.phone_number}
         )
-        access_token = cls.create_access_token(
+        access_token = self.create_access_token(
             data={
                 "sub": user_service.user.phone_number,
                 "role": user_service.user.role
@@ -116,13 +131,12 @@ class AuthService():
         result = Dtos.Token(
             refresh_token=refresh_token,
             access_token=access_token,
-            token_type="bearer"
+            token_type="Bearer"
         )
         return result
 
-    @classmethod
+    @staticmethod
     def is_authorized(
-        cls,
         token_data: Dtos.TokenData,
         required_role: UserRole
     ) -> bool:

@@ -11,16 +11,20 @@ from database.models import BaseModel as DbBaseModel
 from jwt import InvalidTokenError
 from .. import Dtos
 from ..services import AuthService
+from ..dependencies import auth_dep
 
 
-async def authorize(authorization: Annotated[str | None, Header()] = None):
+async def authorize(
+        authorization: Annotated[str | None, Header()] = None,
+        auth_service: AuthService = Depends(auth_dep)
+):
     if not authorization:
         raise HTTPException(
             status_code=401, detail="Authorization header missing."
         )
 
     try:
-        identity: Dtos.TokenData = await AuthService.verify_token(
+        identity: Dtos.TokenData = await auth_service.verify_token(
             token=authorization.replace("Bearer ", "")
         )
     except InvalidTokenError:
@@ -30,8 +34,8 @@ async def authorize(authorization: Annotated[str | None, Header()] = None):
         )
 
     if not (
-        AuthService.is_authorized(identity, UserRole.ADMIN) or
-        AuthService.is_authorized(identity, UserRole.SUPERUSER)
+        auth_service.is_authorized(identity, UserRole.ADMIN) or
+        auth_service.is_authorized(identity, UserRole.SUPERUSER)
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
