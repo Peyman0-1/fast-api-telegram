@@ -25,7 +25,7 @@ async def authorize(
 
     try:
         identity: Dtos.TokenData = await auth_service.verify_token(
-            token=authorization.replace("Bearer ", "")
+            token=authorization
         )
     except InvalidTokenError:
         raise HTTPException(

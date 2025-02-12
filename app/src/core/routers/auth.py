@@ -49,10 +49,19 @@ async def login(
 
 
 @auth_router.get("/logout/")
-async def logout(tokens_data: Dtos.Token):
-    # remove access token from redis
+async def logout(
+    authorization: Annotated[str | None, Header()] = None,
+    auth_manager: AuthService = Depends(auth_dep)
+):
+    if not authorization:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="need a refresh key."
+        )
+    token = authorization.replace("Bearer ", "")
+    await auth_manager.expire_refresh_token(token)
 
-    raise NotImplementedError()
+    return JSONResponse("logged out.")
 
 
 @auth_router.get("/refresh/")
@@ -68,7 +77,7 @@ async def refresh(
 
     try:
         token_data: Dtos.TokenData = await auth_service.verify_token(
-            token=authorization.replace("Bearer ", "")
+            token=authorization
         )
         user = await user_manager.get_user(token_data.phone_number)
 

@@ -87,7 +87,18 @@ class AuthService():
         )
         return encoded_jwt
 
+    async def expire_refresh_token(self, token: str):
+        if token.startswith("Bearer"):
+            token = token.replace("Bearer ", "")
+
+        exists = await self.cache_service.is_exists(token)
+        if exists:
+            await self.cache_service.delete(token)
+
     async def verify_token(self, token: str) -> Dtos.TokenData:
+        if token.startswith("Bearer"):
+            token = token.replace("Bearer ", "")
+
         if (await self.cache_service.is_exists(token)):
             raise jwt.InvalidTokenError("invalid or expired token")
 

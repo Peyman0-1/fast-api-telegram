@@ -39,6 +39,12 @@ class CacheService():
             logger.exception(e)
             return None
 
+    async def delete(self, key: str) -> None:
+        try:
+            await self.redis.delete(key)
+        except Exception as e:
+            logger.exception(e)
+
     async def is_exists(self, key: str) -> bool:
         try:
             result = await self.redis.exists(key)
