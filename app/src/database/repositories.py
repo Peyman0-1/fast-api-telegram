@@ -1,6 +1,6 @@
 from typing import TypeVar, Generic, Type, Optional, List
-from .models import BaseModel, User
-from sqlalchemy import select, delete
+from .models import BaseModel, User, Token, get_utc_now
+from sqlalchemy import select, delete, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -122,3 +122,20 @@ class UserRepository(BaseRepository):
             select(User).filter(User.phone_number == phone_number)
         )
         return user.scalar()
+
+
+class TokenRepository(BaseRepository):
+    def __init__(self, session: AsyncSession):
+        super().__init__(session, model=Token)
+
+    async def get_by_token(self, token: str) -> Optional[Token]:
+        result = await self.session.execute(
+            select(Token).where(
+                and_(
+                    Token.token == token,
+                    Token.is_active.is_(True),
+                    Token.expires_at > get_utc_now()
+                )
+            )
+        )
+        return result.scalar_one_or_none()

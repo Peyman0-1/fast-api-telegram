@@ -24,6 +24,8 @@ class UserCreateDto(BaseModel):
 
 
 class UserDto(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     telegram_id: Optional[int] = None
     telegram_username: Optional[str] = Field(None, max_length=32)
@@ -35,10 +37,11 @@ class UserDto(BaseModel):
 # region Token
 
 
-class Token(BaseModel):
+class TokenResponseDto(BaseModel):
     access_token: str
+    access_token_type: Optional[str]
     refresh_token: Optional[str] = None
-    token_type: str
+    refresh_token_type: Optional[str] = None
 
 
 class TokenData(BaseModel):

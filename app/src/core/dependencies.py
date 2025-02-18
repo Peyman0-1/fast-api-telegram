@@ -1,9 +1,10 @@
 from .services import AuthService
+from database.config import sessionmaker
 
 
 async def auth_dep():
-    service: AuthService = AuthService()
+    service: AuthService = AuthService(sessionmaker())
     try:
         yield service
     finally:
-        await service.cache_service.close_redis()
+        await service.db_repository.session.close()

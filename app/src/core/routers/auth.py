@@ -32,11 +32,11 @@ async def login(
     login_data: Dtos.LoginDto,
     user_manager: UserService = Depends(user_service),
     auth_service: AuthService = Depends(auth_dep)
-) -> Dtos.Token:
+) -> Dtos.TokenResponseDto:
     try:
-        token: Dtos.Token = await auth_service.authenticate(
+        token_response: Dtos.TokenResponseDto = await auth_service.authenticate(
             user_manager,
-            **login_data.model_dump()
+            **login_data.model_dump()  # phone_number and password
         )
 
     except Exception as e:
@@ -45,21 +45,19 @@ async def login(
             detail=str(e)
 
         )
-    return JSONResponse(token.model_dump())
+    return token_response
 
 
 @auth_router.get("/logout/")
 async def logout(
     authorization: Annotated[str | None, Header()] = None,
-    auth_manager: AuthService = Depends(auth_dep)
+    # auth_manager: AuthService = Depends(auth_dep)
 ):
     if not authorization:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail="need a refresh key."
         )
-    token = authorization.replace("Bearer ", "")
-    await auth_manager.expire_refresh_token(token)
 
     return JSONResponse("logged out.")
 
@@ -69,7 +67,7 @@ async def refresh(
     authorization: Annotated[str | None, Header()] = None,
     user_manager: UserService = Depends(user_service),
     auth_service: AuthService = Depends(auth_dep)
-) -> Dtos.Token:
+) -> Dtos.TokenResponseDto:
     if not authorization:
         raise HTTPException(
             status_code=401, detail="Authorization header missing."
@@ -98,4 +96,7 @@ async def refresh(
             "role": user_manager.user.role
         }
     )
-    return Dtos.Token(access_token=access_token, token_type="Bearer")
+    return Dtos.TokenResponseDto(
+        access_token=access_token,
+        access_token_type="Bearer"
+    )

@@ -1,7 +1,9 @@
 from sqlalchemy.orm import DeclarativeBase
 from enum import Enum
 from sqlalchemy import Enum as AlchemyEnum
-from sqlalchemy import String, BigInteger, DateTime, LargeBinary
+from sqlalchemy import String, BigInteger, DateTime, LargeBinary, Boolean
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 
@@ -71,7 +73,43 @@ class User(BaseModel):
         unique=False,
         nullable=True
     )
+    token: Mapped["Token"] = relationship(
+        back_populates="user",
+        uselist=False
+    )
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, telegram_id{self.telegram_id},\
-              username={self.tlegram_username})>"
+              username={self.telegram_username})>"
+
+
+class Token(BaseModel):
+    __tablename__ = "tokens"
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"),
+        unique=True
+    )
+    user: Mapped["User"] = relationship(back_populates="token")
+    token: Mapped[str] = mapped_column(
+        String(35),
+        index=True,
+        unique=True,
+        nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=get_utc_now
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
