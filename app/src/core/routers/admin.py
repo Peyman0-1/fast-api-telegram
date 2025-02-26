@@ -1,53 +1,55 @@
-from typing import Dict, Type, List, Annotated
+from typing import Dict, Type, List, Annotated, TypedDict
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Response, status
-from fastapi import Header
+from fastapi import Cookie
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from database.config import sessionmaker
 from database.repositories import BaseRepository
-from database.models import User, UserRole
+from database.models import User, UserRole, AuthSession
 from database.models import BaseModel as DbBaseModel
-from jwt import InvalidTokenError
-from .. import Dtos
+from .. import dtos
 from ..services import AuthService
-from ..dependencies import auth_dep
+from ..dependencies import auth_dep, db_session_dep
 
 
 async def authorize(
-        authorization: Annotated[str | None, Header()] = None,
-        auth_service: AuthService = Depends(auth_dep)
-):
-    if not authorization:
+        session_id: Annotated[str | None, Cookie()] = None,
+        auth_service: AuthService = Depends(auth_dep),
+) -> AuthSession:
+    if not session_id:
         raise HTTPException(
             status_code=401, detail="Authorization header missing."
         )
 
     try:
-        identity: Dtos.TokenData = await auth_service.verify_token(
-            token=authorization
+        identity = await auth_service.get_session(
+            session_id=int(session_id)
         )
-    except InvalidTokenError:
+        if not identity:
+            raise Exception()
+
+    except Exception:
         raise HTTPException(
-            status_code=401,
-            detail="Authorization token is invalid."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="You must be authorized"
         )
 
     if not (
-        auth_service.is_authorized(identity, UserRole.ADMIN) or
-        auth_service.is_authorized(identity, UserRole.SUPERUSER)
+        identity.user.role == UserRole.ADMIN or
+        identity.user.role == UserRole.SUPERUSER
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You hav'nt access to this route."
+            detail="You don't have access to this route."
         )
+    return identity
 
 
 async def db_repository(model_name: str):
     if model_name not in MODELS:
         raise HTTPException(404, "model not found.")
-    model: DbBaseModel = MODELS[model_name].get("model")
-    session: AsyncSession = sessionmaker()
+    model: Type[DbBaseModel] = MODELS[model_name].get("model")
+    session: AsyncSession = Depends(db_session_dep)
     db_repo: BaseRepository = BaseRepository(session, model)
     try:
         yield db_repo
@@ -62,10 +64,16 @@ admin_router = APIRouter(
     ]
 )
 
+
+class ModelsConfig(TypedDict):
+    dto: Type[BaseModel]
+    model: Type[DbBaseModel]
+
+
 # register models in this dict
-MODELS: Dict[str, Dict[str, Type[BaseModel] | Type[DbBaseModel]]] = {
+MODELS: Dict[str, ModelsConfig] = {
     "User": {
-        "dto": Dtos.UserCreateDto,
+        "dto": dtos.UserCreateDto,
         "model": User
     },
 }
@@ -98,7 +106,7 @@ async def get_all(
         page=page,
         page_size=page_size
     )
-    dto: BaseModel = MODELS[model_name].get("dto")
+    dto: Type[BaseModel] = MODELS[model_name].get("dto")
 
     result = [dto.model_validate(model) for model in objects]
 

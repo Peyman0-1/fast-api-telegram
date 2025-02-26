@@ -1,3 +1,4 @@
+from typing import List
 from sqlalchemy.orm import DeclarativeBase
 from enum import Enum
 from sqlalchemy import Enum as AlchemyEnum
@@ -73,37 +74,36 @@ class User(BaseModel):
         unique=False,
         nullable=True
     )
-    token: Mapped["Token"] = relationship(
-        back_populates="user",
-        uselist=False
+    sessions: Mapped[List["AuthSession"]] = relationship(
+        back_populates="user"
     )
 
     def __repr__(self) -> str:
-        return f"<User(id={self.id}, telegram_id{self.telegram_id},\
+        return f"<User(id={self.id}, telegram_id={self.telegram_id},\
               username={self.telegram_username})>"
 
 
-class Token(BaseModel):
-    __tablename__ = "tokens"
+class AuthSession(BaseModel):
+    __tablename__ = "auth_sessions"
 
     id: Mapped[int] = mapped_column(
         BigInteger,
         primary_key=True
     )
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id"),
-        unique=True
+        ForeignKey("users.id", ondelete="CASCADE")
     )
-    user: Mapped["User"] = relationship(back_populates="token")
-    token: Mapped[str] = mapped_column(
-        String(35),
-        index=True,
-        unique=True,
-        nullable=False
+    user: Mapped["User"] = relationship(
+        back_populates="sessions",
+        passive_deletes=True
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=True
+    )
+    user_agent: Mapped[str] = mapped_column(
+        String(256),
+        nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -113,3 +113,6 @@ class Token(BaseModel):
         DateTime(timezone=True),
         nullable=True
     )
+
+    def __repr__(self) -> str:
+        return f"AuthSession(id={self.id}, user_id={self.user_id})"

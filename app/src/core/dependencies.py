@@ -1,10 +1,14 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
 from .services import AuthService
-from database.config import sessionmaker
+from database.config import session_factory
 
 
-async def auth_dep():
-    service: AuthService = AuthService(sessionmaker())
-    try:
-        yield service
-    finally:
-        await service.db_repository.session.close()
+async def db_session_dep():
+    async with session_factory() as session:
+        yield session
+
+
+async def auth_dep(session: AsyncSession = Depends(db_session_dep)):
+    service: AuthService = AuthService(session)
+    yield service

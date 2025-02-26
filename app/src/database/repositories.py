@@ -1,5 +1,5 @@
 from typing import TypeVar, Generic, Type, Optional, List
-from .models import BaseModel, User, Token, get_utc_now
+from .models import BaseModel, User, AuthSession, get_utc_now
 from sqlalchemy import select, delete, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +23,7 @@ class BaseRepository(Generic[T]):
     async def get_all(self) -> List[T]:
         all_data = await self.session.execute(select(self.model))
         result = all_data.scalars().all()
-        return result
+        return list(result)
 
     async def get_paginated(self,  page: int, page_size: int) -> List[T]:
         offset = (page - 1) * page_size
@@ -35,7 +35,7 @@ class BaseRepository(Generic[T]):
                 "Database error occurred during object retrivation"
             )
             raise e
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def create(self, obj_in: dict) -> T:
         obj = self.model(**obj_in)
@@ -124,17 +124,17 @@ class UserRepository(BaseRepository):
         return user.scalar()
 
 
-class TokenRepository(BaseRepository):
+class AuthSessionRepository(BaseRepository):
     def __init__(self, session: AsyncSession):
-        super().__init__(session, model=Token)
+        super().__init__(session, model=AuthSession)
 
-    async def get_by_token(self, token: str) -> Optional[Token]:
+    async def get_session(self, session_id: int) -> Optional[AuthSession]:
         result = await self.session.execute(
-            select(Token).where(
+            select(AuthSession).where(
                 and_(
-                    Token.token == token,
-                    Token.is_active.is_(True),
-                    Token.expires_at > get_utc_now()
+                    AuthSession.id == session_id,
+                    AuthSession.is_active.is_(True),
+                    AuthSession.expires_at > get_utc_now()
                 )
             )
         )

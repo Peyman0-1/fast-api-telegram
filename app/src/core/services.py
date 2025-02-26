@@ -1,13 +1,9 @@
-import string
-import random
-from database.repositories import UserRepository, TokenRepository
-from database.models import User, Token, UserRole
+from database.repositories import UserRepository, AuthSessionRepository
+from database.models import User, AuthSession
 from datetime import timedelta, timezone, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from . import Dtos
-from os import getenv
+from . import dtos
 import bcrypt
-import jwt
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,14 +24,14 @@ class UserService():
         if (not user.password):
             return False
 
-        return bcrypt.checkpw(password, self.user.password)
+        return bcrypt.checkpw(password, user.password)
 
-    async def create_user(self, new_user: Dtos.UserCreateDto) -> Dtos.UserDto:
+    async def create_user(self, new_user: dtos.UserCreateDto) -> dtos.UserDto:
         if new_user.password:
             new_user.password = self.hash_password(new_user.password)
 
-        new_user = await self.db_repository.create(new_user)
-        return Dtos.UserDto(new_user.model_validate(new_user))
+        new_user = await self.db_repository.create(new_user.model_dump())
+        return dtos.UserDto.model_validate(new_user)
 
     async def get_user(self, phone_number: str) -> User | None:
         user = await self.db_repository.get_by_phone(phone_number)
@@ -43,100 +39,52 @@ class UserService():
 
 
 class AuthService():
-    SECRET_KEY = getenv('APP_SECRET_KEY')
-    ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = 15
-    REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+    SESSION_EXPIRE_DELTA = timedelta(days=7)
 
-    db_repository: TokenRepository
+    db_repository: AuthSessionRepository
 
     def __init__(self, session: AsyncSession):
-        self.db_repository = TokenRepository(session)
+        self.db_repository = AuthSessionRepository(session)
 
-    def create_access_token(
-        self,
-        data: dict,
-        expires_delta: timedelta = timedelta(
-            minutes=ACCESS_TOKEN_EXPIRE_MINUTES
-        )
-    ) -> str:
-        to_encode = data.copy()
-        expire = datetime.now(timezone.utc) + expires_delta
-
-        to_encode.update({"exp": expire})
-        return jwt.encode(to_encode, self.SECRET_KEY, algorithm=self.ALGORITHM)
-
-    async def create_refresh_token(
+    async def create_session(
         self,
         user_id: int,
-        expires_delta: timedelta = timedelta(
-            minutes=REFRESH_TOKEN_EXPIRE_MINUTES
-        )
-    ) -> str:
-        choices = string.ascii_letters + string.digits
-        new_token = ''.join(random.choice(choices) for i in range(32))
+        user_agent: str | None,
+        expires_delta: timedelta = SESSION_EXPIRE_DELTA
+    ) -> AuthSession:
 
-        await self.db_repository.create(
+        new_session = await self.db_repository.create(
             {
                 "user_id": user_id,
-                "token": new_token,
+                "user_agent": user_agent,
                 "expires_at": datetime.now(timezone.utc) + expires_delta
             }
         )
 
-        return new_token
+        return new_session
 
-    async def expire_refresh_token(self, token: str):
-        if token.startswith("Token"):
-            token = token.replace("Token ", "")
-        else:
-            raise Exception("token is unsupported.")
+    async def revoke_session(self, session_id: int):
+        await self.db_repository.update(
+            session_id,
+            obj_in={
+                "is_active": False
+            }
+        )
 
-        token: Token = await self.db_repository.get_by_token(token)
+    async def get_session(self, session_id: int) -> AuthSession:
+        session = await self.db_repository.get_session(session_id)
+        if not session:
+            raise Exception("You're unauthorized.")
 
-        if not token:
-            raise Exception("there is no token found.")
-
-        await self.db_repository.delete(token.id)
-
-    async def verify_token(self, token: str) -> Dtos.TokenData:
-        if token.startswith("Bearer"):
-            token = token.replace("Bearer ", "")
-            try:
-                decoded_token = jwt.decode(
-                    token,
-                    self.SECRET_KEY,
-                    algorithms=[self.ALGORITHM]
-                )
-                return Dtos.TokenData.from_payload(**decoded_token)
-
-            except jwt.PyJWTError as error:
-                raise jwt.InvalidTokenError(
-                    "invalid or expired token") from error
-
-        elif token.startswith("Token"):
-            token = token.replace("Token ", "")
-            user_token = await self.db_repository.get_by_token(token)
-            if not user_token:
-                raise Exception("Token is Invalid.")
-            if user_token.expires_at < datetime.now(timezone.utc):
-                raise Exception("Token is Expired.")
-
-            return Dtos.TokenData(
-                phone_number=user_token.user.phone_number,
-                role=user_token.user.role,
-                exp=user_token.expires_at
-            )
-
-        else:
-            raise Exception("Invalid Authentication Method.")
+        return session
 
     async def authenticate(
         self,
         user_service: UserService,
+        user_agent: str,
         phone_number: str,
         password: bytes
-    ) -> Dtos.TokenResponseDto:
+    ) -> AuthSession:
 
         user = await user_service.get_user(phone_number)
 
@@ -148,29 +96,8 @@ class AuthService():
         if not is_password_match:
             raise Exception("username or password is incorrect.")
 
-        refresh_token = await self.create_refresh_token(
-            user_id=user.id,
-            expires_delta=timedelta(
-                minutes=self.REFRESH_TOKEN_EXPIRE_MINUTES
-            )
+        session = await self.create_session(
+            user.id,
+            user_agent,
         )
-        access_token = self.create_access_token(
-            data={
-                "sub": user.phone_number,
-                "role": user.role
-            }
-        )
-        result = Dtos.TokenResponseDto(
-            refresh_token=refresh_token,
-            refresh_token_type="Token",
-            access_token=access_token,
-            access_token_type="Bearer",
-        )
-        return result
-
-    @staticmethod
-    def is_authorized(
-        token_data: Dtos.TokenData,
-        required_role: UserRole
-    ) -> bool:
-        return token_data.role == required_role.value()
+        return session

@@ -1,12 +1,11 @@
 from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Header
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Cookie
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from database.config import sessionmaker
-from jwt import InvalidTokenError
+from database.models import AuthSession
 from ..services import AuthService, UserService
-from ..dependencies import auth_dep
-from .. import Dtos
+from ..dependencies import auth_dep, db_session_dep
+from .. import dtos
 import logging
 
 logger = logging.Logger(__name__)
@@ -17,26 +16,30 @@ auth_router = APIRouter(
 )
 
 
-async def user_service():
-    session: AsyncSession = sessionmaker()
+async def user_service(session: AsyncSession = Depends(db_session_dep)):
     service: UserService = UserService(session)
-
-    try:
-        yield service
-    finally:
-        await session.close()
+    yield service
 
 
 @auth_router.post("/login/")
 async def login(
-    login_data: Dtos.LoginDto,
+    login_data: dtos.LoginDto,
+    response: Response,
     user_manager: UserService = Depends(user_service),
     auth_service: AuthService = Depends(auth_dep)
-) -> Dtos.TokenResponseDto:
+) -> Response:
     try:
-        token_response: Dtos.TokenResponseDto = await auth_service.authenticate(
+        auth_session: AuthSession = await auth_service.authenticate(
             user_manager,
             **login_data.model_dump()  # phone_number and password
+        )
+        response.set_cookie(
+            key="session_id",
+            value=str(auth_session.id),
+            expires=auth_session.expires_at,
+            httponly=True,
+            samesite="lax",
+            path="/"
         )
 
     except Exception as e:
@@ -45,58 +48,27 @@ async def login(
             detail=str(e)
 
         )
-    return token_response
+    return response
 
 
 @auth_router.get("/logout/")
 async def logout(
-    authorization: Annotated[str | None, Header()] = None,
-    # auth_manager: AuthService = Depends(auth_dep)
+    response: Response,
+    session_id: Annotated[str | None, Cookie()] = None,
+    auth_manager: AuthService = Depends(auth_dep)
 ):
-    if not authorization:
+    if not session_id:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
-            detail="need a refresh key."
+            detail="i need a cookie."
         )
-
-    return JSONResponse("logged out.")
-
-
-@auth_router.get("/refresh/")
-async def refresh(
-    authorization: Annotated[str | None, Header()] = None,
-    user_manager: UserService = Depends(user_service),
-    auth_service: AuthService = Depends(auth_dep)
-) -> Dtos.TokenResponseDto:
-    if not authorization:
-        raise HTTPException(
-            status_code=401, detail="Authorization header missing."
-        )
-
     try:
-        token_data: Dtos.TokenData = await auth_service.verify_token(
-            token=authorization
-        )
-        user = await user_manager.get_user(token_data.phone_number)
-
-    except InvalidTokenError:
+        await auth_manager.get_session(int(session_id))
+    except Exception:
         raise HTTPException(
-            status_code=401,
-            detail="Authorization token is invalid."
+            status.HTTP_401_UNAUTHORIZED,
+            detail="session doesn't exist."
         )
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization token is invalid."
-        )
+    response.delete_cookie("session_id")
 
-    access_token = auth_service.create_access_token(
-        data={
-            "sub": user_manager.user.phone_number,
-            "role": user_manager.user.role
-        }
-    )
-    return Dtos.TokenResponseDto(
-        access_token=access_token,
-        access_token_type="Bearer"
-    )
+    return response
