@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, TypeVar, Generic
 from sqlalchemy.orm import DeclarativeBase
 from enum import Enum
 from sqlalchemy import Enum as AlchemyEnum
@@ -7,6 +7,8 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
+
+MappedIdType = TypeVar('MappedIdType')
 
 
 def get_utc_now() -> datetime:
@@ -23,7 +25,15 @@ class BaseModel(DeclarativeBase):
     pass
 
 
-class User(BaseModel):
+class AbstractBase(BaseModel, Generic[MappedIdType]):
+    __abstract__ = True
+
+    id: Mapped[MappedIdType] = mapped_column(
+        primary_key=True
+    )
+
+
+class User(AbstractBase[int]):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(
@@ -83,7 +93,7 @@ class User(BaseModel):
               username={self.telegram_username})>"
 
 
-class AuthSession(BaseModel):
+class AuthSession(AbstractBase[int]):
     __tablename__ = "auth_sessions"
 
     id: Mapped[int] = mapped_column(

@@ -1,11 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from .services import AuthService
-from database.config import session_factory
+from database.config import SessionFactory
 
 
 async def db_session_dep():
-    async with session_factory() as session:
+    async with SessionFactory() as session:
         yield session
 
 

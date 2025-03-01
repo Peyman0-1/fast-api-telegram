@@ -1,11 +1,11 @@
 from typing import TypeVar, Generic, Type, Optional, List
-from .models import BaseModel, User, AuthSession, get_utc_now
+from .models import AbstractBase, User, AuthSession, get_utc_now
 from sqlalchemy import select, delete, and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-T = TypeVar('T', bound=BaseModel)
+T = TypeVar('T', bound=AbstractBase)
 
 
 class BaseRepository(Generic[T]):

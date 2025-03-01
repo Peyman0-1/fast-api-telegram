@@ -9,7 +9,4 @@ engine = create_async_engine(
     f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@127.0.0.1:5432/{DB_NAME}"
 )
 
-session_factory = async_sessionmaker(
-    bind=engine,
-    expire_on_commit=False
-)
+SessionFactory = async_sessionmaker(bind=engine, expire_on_commit=False)
