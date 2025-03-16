@@ -5,8 +5,7 @@ from fastapi import Cookie
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.repositories import BaseRepository
-from database.models import User, UserRole, AuthSession
-from database.models import BaseModel as DbBaseModel
+from database.models import User, UserRole, AuthSession, AbstractBase
 from .. import dtos
 from ..services import AuthService
 from ..dependencies import auth_dep, db_session_dep
@@ -48,7 +47,7 @@ async def authorize(
 async def db_repository(model_name: str):
     if model_name not in MODELS:
         raise HTTPException(404, "model not found.")
-    model: Type[DbBaseModel] = MODELS[model_name].get("model")
+    model: Type[AbstractBase] = MODELS[model_name].get("model")
     session: AsyncSession = Depends(db_session_dep)
     db_repo: BaseRepository = BaseRepository(session, model)
     try:
@@ -67,7 +66,7 @@ admin_router = APIRouter(
 
 class ModelsConfig(TypedDict):
     dto: Type[BaseModel]
-    model: Type[DbBaseModel]
+    model: Type[AbstractBase]
 
 
 # register models in this dict
@@ -93,11 +92,7 @@ async def get_all(
     page_size: int = 20,
     db_repository: BaseRepository = Depends(db_repository)
 ):
-    if page < 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST
-        )
-    if not (page_size in range(1, 101)):
+    if page_size > 101 or page_size < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST
         )
