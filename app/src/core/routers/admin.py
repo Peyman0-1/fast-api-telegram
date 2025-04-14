@@ -1,6 +1,7 @@
 from typing import Dict, Type, List, Annotated, TypedDict
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException, Depends, Response, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi.responses import Response, JSONResponse
 from fastapi import Cookie
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,22 +18,19 @@ async def authorize(
 ) -> AuthSession:
     if not session_id:
         raise HTTPException(
-            status_code=401, detail="Authorization header missing."
+            status_code=401, detail="Authorization cookie is missing."
         )
 
     try:
-        identity = await auth_service.get_session(
+        identity: AuthSession = await auth_service.get_session(
             session_id=int(session_id)
         )
-        if not identity:
-            raise Exception()
 
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="You must be authorized"
         )
-
     if not (
         identity.user.role == UserRole.ADMIN or
         identity.user.role == UserRole.SUPERUSER
@@ -44,20 +42,19 @@ async def authorize(
     return identity
 
 
-async def db_repository(model_name: str):
+async def db_repository(
+    model_name: str,
+    session: AsyncSession = Depends(db_session_dep)
+):
     if model_name not in MODELS:
         raise HTTPException(404, "model not found.")
     model: Type[AbstractBase] = MODELS[model_name].get("model")
-    session: AsyncSession = Depends(db_session_dep)
     db_repo: BaseRepository = BaseRepository(session, model)
-    try:
-        yield db_repo
-    finally:
-        await session.close()
+    yield db_repo
 
 admin_router = APIRouter(
-    prefix="/admin",
-    tags=["admin"],
+    prefix="/v1/admin",
+    tags=["admin v1"],
     dependencies=[
         Depends(authorize),
     ]
@@ -78,11 +75,24 @@ MODELS: Dict[str, ModelsConfig] = {
 }
 
 
+async def get_dto_instance(
+    request: Request,
+    model_name: str
+) -> Type[BaseModel]:
+    model_config = MODELS.get(model_name)
+    if not model_config:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    dto_class = model_config["dto"]
+    data = await request.json()
+    return dto_class(**data)
+
+
 @admin_router.get("/", response_model=Dict[str, List[str]])
 async def get_models_name():
-    return {
+    return JSONResponse({
         "models": list(MODELS.keys())
-    }
+    })
 
 
 @admin_router.get("/{model_name}/")
@@ -110,13 +120,19 @@ async def get_all(
 
 @admin_router.post("/{model_name}/")
 async def create_new(
-    new_model: BaseModel,
+    model_name: str,
+    request: Request,
     db_repository: BaseRepository = Depends(db_repository)
 ):
+    dto_instance = await get_dto_instance(request, model_name)
 
-    await db_repository.create(new_model.model_dump())
+    # TODO: it's better that using a manager
+    # instead of using directly of dbrepository
+    # the manager class must have a base class for rules about functions
+    # TODO: improve exeptions
+    await db_repository.create(dto_instance.model_dump())
 
-    return Response()
+    return Response(status_code=201)
 
 
 @admin_router.get("/{model_name}/{id}")
@@ -138,11 +154,16 @@ async def get_model(
 async def update_model(
     model_name: str,
     id: int,
-    update_model: BaseModel,
+    request: Request,
     db_repository: BaseRepository = Depends(db_repository)
 ):
     try:
-        result = await db_repository.update(id, update_model.model_dump())
+        dto = await get_dto_instance(request, model_name)
+        result = await db_repository.update(
+            id,
+            dto.model_dump(exclude_unset=True)
+        )
+        return MODELS[model_name].get("dto").model_validate(result)
 
     except SQLAlchemyError:
         raise HTTPException(
@@ -150,12 +171,9 @@ async def update_model(
             detail="there is a problem"
         )
 
-    return MODELS[model_name].get("dto").model_validate(result)
-
 
 @admin_router.delete("/{model_name}/{id}")
 async def delete_model(
-    model_name: str,
     id: int,
     db_repository: BaseRepository = Depends(db_repository)
 ):

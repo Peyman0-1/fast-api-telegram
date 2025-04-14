@@ -1,6 +1,7 @@
 from typing import TypeVar, Generic, Type, Optional, List
 from .models import AbstractBase, User, AuthSession, get_utc_now
 from sqlalchemy import select, delete, and_
+from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
@@ -130,7 +131,9 @@ class AuthSessionRepository(BaseRepository):
 
     async def get_session(self, session_id: int) -> Optional[AuthSession]:
         result = await self.session.execute(
-            select(AuthSession).where(
+            select(AuthSession)
+            .options(joinedload(AuthSession.user))
+            .where(
                 and_(
                     AuthSession.id == session_id,
                     AuthSession.is_active.is_(True),

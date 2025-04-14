@@ -5,6 +5,7 @@ from database.models import UserRole
 
 
 class UserCreateDto(BaseModel):
+    id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
 
     telegram_id: int

@@ -53,14 +53,13 @@ class AuthService():
         expires_delta: timedelta = SESSION_EXPIRE_DELTA
     ) -> AuthSession:
 
-        new_session = await self.db_repository.create(
+        new_session: AuthSession = await self.db_repository.create(
             {
                 "user_id": user_id,
                 "user_agent": user_agent,
                 "expires_at": datetime.now(timezone.utc) + expires_delta
             }
         )
-
         return new_session
 
     async def revoke_session(self, session_id: int):
