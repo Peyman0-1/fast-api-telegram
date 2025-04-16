@@ -4,7 +4,7 @@ from .api import fast_api
 
 server_config = Config(
     app=fast_api,
-    host="127.0.0.1",
+    host="0.0.0.0",
     port=8000
 )
 
