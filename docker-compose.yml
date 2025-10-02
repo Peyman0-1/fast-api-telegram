@@ -1,34 +1,35 @@
-version: "3.9"
+version: '3.8'
 
 services:
   app:
-    build:
-      context: app
-      dockerfile: src/Dockerfile
-    env_file:
-      - .env
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-    restart: always
+    build: 
+      context: ./app
+    container_name: backend_app
+    env_file: .env
+    command: >
+      bash -c "python -m src.main"
     networks:
-      - app-network
-
-  db:
-    image: postgres:16-alpine
+      - fast_api_telegram_network
     restart: always
-    env_file:
-      - .env
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    depends_on:
+      - postgresql
+  
+  postgresql:
+    image: postgres:16-bookworm
     ports:
       - "5432:5432"
+    env_file: .env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
     networks:
-      - app-network
+      - fast_api_telegram_network
+    restart: always
+    shm_size: 128mb
+
 
 volumes:
-  pgdata:
+  postgres_data:
 
 networks:
-  app-network:
+  fast_api_telegram_network:
+    driver: bridge

@@ -1,18 +1,22 @@
-FROM sunpeek/poetry:py3.11-slim as builder
-
+# Build stage
+FROM python:3.13 AS builder
 WORKDIR /app
+COPY requirements.txt ./
 
-COPY . /app
+RUN pip install --no-cache-dir \
+    --timeout=200 \
+    --retries=5 \
+    -r requirements.txt
+# RUN pip install --no-cache-dir -r requirements.txt
 
-RUN poetry install --no-root
-
-#apply migrations into database
-RUN alembic upgrade head
-
-FROM sunpeek/poetry:py3.11-slim
-
+# Runtime stage
+FROM python:3.13-bookworm
 WORKDIR /app
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+COPY . .
 
-COPY --from=builder /app /app
-EXPOSE 8000
-CMD [ "python", "src/main.py" ]
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+CMD ["python", "-m", "src.main"]

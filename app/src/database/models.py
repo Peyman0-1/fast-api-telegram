@@ -7,6 +7,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
+import uuid
 
 MappedIdType = TypeVar('MappedIdType')
 
@@ -106,6 +107,11 @@ class AuthSession(AbstractBase[int]):
     user: Mapped["User"] = relationship(
         back_populates="sessions",
         passive_deletes=True
+    )
+    token: Mapped[str] = mapped_column(
+        String(36),
+        unique=True,
+        default=lambda: str(uuid.uuid4())
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,

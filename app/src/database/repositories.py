@@ -1,10 +1,11 @@
 from typing import TypeVar, Generic, Type, Optional, List
 from .models import AbstractBase, User, AuthSession, get_utc_now
-from sqlalchemy import select, delete, and_
+from sqlalchemy import select, delete, and_, cast, String
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
+import bcrypt
 
 T = TypeVar('T', bound=AbstractBase)
 
@@ -26,17 +27,49 @@ class BaseRepository(Generic[T]):
         result = all_data.scalars().all()
         return list(result)
 
-    async def get_paginated(self,  page: int, page_size: int) -> List[T]:
+    async def get_paginated(
+        self,
+        page: int,
+        page_size: int,
+        sortby: Optional[str] = None,
+        direction: Optional[str] = None,
+        search: Optional[str] = None,
+        search_fields: list[str] | None = None
+    ) -> List[T]:
         offset = (page - 1) * page_size
         try:
-            query = select(self.model).offset(offset).limit(page_size)
+            query = select(self.model)
+
+            if search and search_fields:
+                conditions = []
+                for field in search_fields:
+                    col = getattr(self.model, field, None)
+                    if col is not None:
+                        conditions.append(
+                            cast(col, String).ilike(f"%{search}%")
+                        )
+                if conditions:
+                    from sqlalchemy import or_
+                    query = query.where(or_(*conditions))
+
+            if sortby:
+                col = getattr(self.model, sortby, None)
+                if col is not None:
+                    if direction and direction.lower() == "desc":
+                        query = query.order_by(col.desc())
+                    else:
+                        query = query.order_by(col.asc())
+
+            query = query.offset(offset).limit(page_size)
+
             result = await self.session.execute(query)
+            return list(result.scalars().all())
+
         except SQLAlchemyError as e:
             self.logger.exception(
-                "Database error occurred during object retrivation"
+                "Database error occurred during object retrieval"
             )
             raise e
-        return list(result.scalars().all())
 
     async def create(self, obj_in: dict) -> T:
         obj = self.model(**obj_in)
@@ -113,8 +146,20 @@ class BaseRepository(Generic[T]):
         else:
             await self.session.commit()
 
+    async def bulk_add(self, objects: List[dict]) -> None:
+        try:
+            instances = [self.model(**obj) for obj in objects]
+            self.session.add_all(instances)
+            await self.session.commit()
+        except SQLAlchemyError as e:
+            self.logger.exception(
+                "Database error occurred during bulk object addition."
+            )
+            await self.session.rollback()
+            raise e
 
-class UserRepository(BaseRepository):
+
+class UserRepository(BaseRepository[User]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, model=User)
 
@@ -123,6 +168,22 @@ class UserRepository(BaseRepository):
             select(User).filter(User.phone_number == phone_number)
         )
         return user.scalar()
+
+    async def create(self, obj_in: dict) -> User:
+        if obj_in.get("password"):
+            obj_in["password"] = bcrypt.hashpw(
+                obj_in["password"], bcrypt.gensalt()
+            )
+        return await super().create(obj_in)
+
+    async def update(self, id: int, obj_in: dict) -> Optional[User]:
+        if obj_in.get("password"):
+            user = await self.get_by_id(id)
+            if user and (user.password != obj_in["password"]):
+                obj_in["password"] = bcrypt.hashpw(
+                    obj_in["password"], bcrypt.gensalt()
+                )
+        return await super().update(id, obj_in)
 
 
 class AuthSessionRepository(BaseRepository):
@@ -136,6 +197,20 @@ class AuthSessionRepository(BaseRepository):
             .where(
                 and_(
                     AuthSession.id == session_id,
+                    AuthSession.is_active.is_(True),
+                    AuthSession.expires_at > get_utc_now()
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def get_session_by_token(self, token: str) -> Optional[AuthSession]:
+        result = await self.session.execute(
+            select(AuthSession)
+            .options(joinedload(AuthSession.user))
+            .where(
+                and_(
+                    AuthSession.token == token,
                     AuthSession.is_active.is_(True),
                     AuthSession.expires_at > get_utc_now()
                 )

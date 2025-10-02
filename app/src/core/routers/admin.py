@@ -1,29 +1,34 @@
-from typing import Dict, Type, List, Annotated, TypedDict
+from enum import Enum
+from fastapi import Query
+from typing import Dict, Type, List, Annotated
+from typing import TypedDict, Optional, NotRequired
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import Response, JSONResponse
 from fastapi import Cookie
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from database.repositories import BaseRepository
-from database.models import User, UserRole, AuthSession, AbstractBase
-from .. import dtos
-from ..services import AuthService
-from ..dependencies import auth_dep, db_session_dep
+from src.database.repositories import BaseRepository, UserRepository
+from src.database.models import User, UserRole, AuthSession, AbstractBase
+from src.core import dtos
+from src.core.services import AuthService
+from src.core.dependencies import auth_dep, db_session_dep
 
 
 async def authorize(
-        session_id: Annotated[str | None, Cookie()] = None,
+        # TODO: move this logic into specefic place
+        # with customizable permissions
+        token: Annotated[str | None, Cookie()] = None,
         auth_service: AuthService = Depends(auth_dep),
 ) -> AuthSession:
-    if not session_id:
+    if not token:
         raise HTTPException(
             status_code=401, detail="Authorization cookie is missing."
         )
 
     try:
         identity: AuthSession = await auth_service.get_session(
-            session_id=int(session_id)
+            token=token
         )
 
     except Exception:
@@ -32,8 +37,7 @@ async def authorize(
             detail="You must be authorized"
         )
     if not (
-        identity.user.role == UserRole.ADMIN or
-        identity.user.role == UserRole.SUPERUSER
+            identity.user.role == UserRole.SUPERUSER
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -49,11 +53,17 @@ async def db_repository(
     if model_name not in MODELS:
         raise HTTPException(404, "model not found.")
     model: Type[AbstractBase] = MODELS[model_name].get("model")
-    db_repo: BaseRepository = BaseRepository(session, model)
+
+    special_repo = MODELS[model_name].get("repository")
+    if special_repo:
+        db_repo = special_repo(session)  # type: ignore
+    else:
+
+        db_repo = BaseRepository(session, model)
     yield db_repo
 
 admin_router = APIRouter(
-    prefix="/v1/admin",
+    prefix="/api/v1/admin",
     tags=["admin v1"],
     dependencies=[
         Depends(authorize),
@@ -64,13 +74,15 @@ admin_router = APIRouter(
 class ModelsConfig(TypedDict):
     dto: Type[BaseModel]
     model: Type[AbstractBase]
+    repository: NotRequired[Type[BaseRepository]]
 
 
 # register models in this dict
 MODELS: Dict[str, ModelsConfig] = {
-    "User": {
+    "user": {
         "dto": dtos.UserCreateDto,
-        "model": User
+        "model": User,
+        "repository": UserRepository
     },
 }
 
@@ -85,7 +97,7 @@ async def get_dto_instance(
 
     dto_class = model_config["dto"]
     data = await request.json()
-    return dto_class(**data)
+    return dto_class(**data)  # type: ignore
 
 
 @admin_router.get("/", response_model=Dict[str, List[str]])
@@ -95,21 +107,33 @@ async def get_models_name():
     })
 
 
-@admin_router.get("/{model_name}/")
+class SortOrder(str, Enum):
+    ascending = "asc"
+    descending = "desc"
+
+
+@admin_router.get("/{model_name}")
 async def get_all(
     model_name: str,
     page: int = 1,
     page_size: int = 20,
+    sort_by: str | None = None,
+    direction: SortOrder | None = None,
+    search: str | None = None,
+    search_fields: Optional[List[str]] = Query(None),
     db_repository: BaseRepository = Depends(db_repository)
 ):
-    if page_size > 101 or page_size < 1:
+    if page_size > 1001 or page_size < 1:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST
         )
-
     objects = await db_repository.get_paginated(
         page=page,
-        page_size=page_size
+        page_size=page_size,
+        sortby=sort_by,
+        direction=direction,
+        search=search,
+        search_fields=search_fields,
     )
     dto: Type[BaseModel] = MODELS[model_name].get("dto")
 
@@ -118,7 +142,7 @@ async def get_all(
     return result
 
 
-@admin_router.post("/{model_name}/")
+@admin_router.post("/{model_name}")
 async def create_new(
     model_name: str,
     request: Request,
@@ -130,9 +154,11 @@ async def create_new(
     # instead of using directly of dbrepository
     # the manager class must have a base class for rules about functions
     # TODO: improve exeptions
-    await db_repository.create(dto_instance.model_dump())
+    new_record = await db_repository.create(
+        dto_instance.model_dump()  # type: ignore
+    )
 
-    return Response(status_code=201)
+    return MODELS[model_name].get("dto").model_validate(new_record)
 
 
 @admin_router.get("/{model_name}/{id}")
@@ -161,7 +187,7 @@ async def update_model(
         dto = await get_dto_instance(request, model_name)
         result = await db_repository.update(
             id,
-            dto.model_dump(exclude_unset=True)
+            dto.model_dump(exclude_unset=True)  # type: ignore
         )
         return MODELS[model_name].get("dto").model_validate(result)
 

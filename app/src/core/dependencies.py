@@ -1,7 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 from .services import AuthService
-from database.config import SessionFactory
+from src.database.config import SessionFactory
 
 
 async def db_session_dep():

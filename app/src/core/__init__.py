@@ -1,11 +1,16 @@
 from uvicorn import Config, Server
 from .api import fast_api
+import os
 
+APP_ENV = os.getenv('APP_ENV', "production")
+
+UVICORN_LOG_LEVEL = "debug" if APP_ENV == "development" else "error"
 
 server_config = Config(
     app=fast_api,
     host="0.0.0.0",
-    port=8000
+    port=8000,
+    log_level=UVICORN_LOG_LEVEL
 )
 
 

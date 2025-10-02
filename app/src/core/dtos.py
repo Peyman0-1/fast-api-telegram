@@ -1,7 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from database.models import UserRole
-# region User
+from src.database.models import UserRole
+
+# region Auth
 
 
 class UserCreateDto(BaseModel):
@@ -45,3 +46,4 @@ class LoginDto(BaseModel):
         if isinstance(v, str):
             return v.encode('utf-8')
         return v
+# endregion

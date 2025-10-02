@@ -1,18 +1,21 @@
+from datetime import datetime, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Cookie
 from fastapi.params import Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from database.models import AuthSession
-from ..services import AuthService, UserService
-from ..dependencies import auth_dep, db_session_dep
-from .. import dtos
+from src.database.models import AuthSession
+from src.core.custom_exceptions import InvalidCredentialsException
+from src.core.services import AuthService, UserService
+from src.core.dependencies import auth_dep, db_session_dep
+from src.core import dtos
 import logging
+import os
 
-logger = logging.Logger(__name__)
+logger = logging.getLogger(__name__)
 
 auth_router = APIRouter(
-    prefix="/auth",
+    prefix="/api/v1/auth",
     tags=["authentication"]
 )
 
@@ -22,7 +25,7 @@ async def user_service(session: AsyncSession = Depends(db_session_dep)):
     yield service
 
 
-@auth_router.post("/login/")
+@auth_router.post("/login")
 async def login(
     login_data: dtos.LoginDto,
     user_agent: Annotated[str, Header()],
@@ -37,35 +40,64 @@ async def login(
         )
         response = JSONResponse({"message": "Login successful"})
         response.set_cookie(
-            key="session_id",
-            value=str(auth_session.id),
+            key="token",
+            value=auth_session.token,
             expires=auth_session.expires_at,
+            domain=f".{os.getenv('APP_DOMAIN', 'localhost')}",
+            max_age=int(
+                (auth_session.expires_at - datetime.now(timezone.utc))
+                .total_seconds()
+            ),
             httponly=True,
-            samesite="lax",
+            samesite="none",
+            secure=True,
             path="/"
         )
 
-    except Exception as e:
+    except InvalidCredentialsException:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            detail="Invalid credentials")
+    except Exception:
+        logger.exception("Unexpected error during login")
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-
-        )
+            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal error")
     return response
 
 
-@auth_router.get("/logout/")
-async def logout(
-    session_id: Annotated[str | None, Cookie()] = None,
+@auth_router.get("/me")
+async def get_me(
+    token: Annotated[str | None, Cookie()] = None,
     auth_manager: AuthService = Depends(auth_dep)
-):
-    if not session_id or (not session_id.isnumeric()):
+) -> dtos.UserDto:
+    if not token:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail="i need a cookie."
         )
     try:
-        await auth_manager.revoke_session(int(session_id))
+        session = await auth_manager.get_session(token)
+    except InvalidCredentialsException:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="i need a cookie"
+        )
+
+    response = dtos.UserDto.model_validate(session.user)
+    return response
+
+
+@auth_router.post("/logout")
+async def logout(
+    token: Annotated[str | None, Cookie()] = None,
+    auth_manager: AuthService = Depends(auth_dep)
+) -> JSONResponse:
+    if not token:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="i need a cookie."
+        )
+    try:
+        await auth_manager.revoke_session(token)
     except Exception:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
