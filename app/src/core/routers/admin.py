@@ -1,49 +1,16 @@
 from enum import Enum
 from fastapi import Query
-from typing import Dict, Type, List, Annotated
+from typing import Dict, Type, List
 from typing import TypedDict, Optional, NotRequired
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from fastapi.responses import Response, JSONResponse
-from fastapi import Cookie
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.repositories import BaseRepository, UserRepository
-from src.database.models import User, UserRole, AuthSession, AbstractBase
+from src.database.models import User, AbstractBase, UserRole
 from src.core import dtos
-from src.core.services import AuthService
-from src.core.dependencies import auth_dep, db_session_dep
-
-
-async def authorize(
-        # TODO: move this logic into specefic place
-        # with customizable permissions
-        token: Annotated[str | None, Cookie()] = None,
-        auth_service: AuthService = Depends(auth_dep),
-) -> AuthSession:
-    if not token:
-        raise HTTPException(
-            status_code=401, detail="Authorization cookie is missing."
-        )
-
-    try:
-        identity: AuthSession = await auth_service.get_session(
-            token=token
-        )
-
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="You must be authorized"
-        )
-    if not (
-            identity.user.role == UserRole.SUPERUSER
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this route."
-        )
-    return identity
+from src.core.dependencies import authorize_dep, db_session_dep
 
 
 async def db_repository(
@@ -66,7 +33,10 @@ admin_router = APIRouter(
     prefix="/api/v1/admin",
     tags=["admin v1"],
     dependencies=[
-        Depends(authorize),
+        Depends(authorize_dep([
+            UserRole.ADMIN,
+            UserRole.SUPERUSER
+        ])),
     ]
 )
 

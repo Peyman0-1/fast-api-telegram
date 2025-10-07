@@ -1,5 +1,5 @@
 from uvicorn import Config, Server
-from .api import fast_api
+from src.core.api import fast_api
 import os
 
 APP_ENV = os.getenv('APP_ENV', "production")

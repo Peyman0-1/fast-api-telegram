@@ -8,7 +8,6 @@ from telegram import Update
 import os
 
 logger = logging.getLogger(__name__)
-logging.getLogger("matplotlib").setLevel(logging.WARNING)
 fast_api = FastAPI()
 
 
