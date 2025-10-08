@@ -2,8 +2,8 @@ from src.database.repositories import UserRepository, AuthSessionRepository
 from src.database.models import User, AuthSession
 from datetime import timedelta, timezone, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from .custom_exceptions import InvalidCredentialsException
-from . import dtos
+from src.core.custom_exceptions import InvalidCredentialsException
+from src.core import dtos
 import bcrypt
 import logging
 
@@ -27,6 +27,14 @@ class UserService():
 
         return bcrypt.checkpw(password, user.password)
 
+    async def reset_pasword(
+        self,
+            phone_number: str,
+            data: dtos.ResetPasswordDto
+    ):
+        # user = await self.get_user(phone_number)
+        raise NotImplementedError()
+
     async def create_user(self, new_user: dtos.UserCreateDto) -> dtos.UserDto:
         new_user = await self.db_repository.create(
             new_user.model_dump()
@@ -38,7 +46,7 @@ class UserService():
         return user
 
 
-class AuthService():
+class AuthSesssionService():
     SESSION_EXPIRE_DELTA = timedelta(days=7)
 
     db_repository: AuthSessionRepository
@@ -71,6 +79,9 @@ class AuthService():
                     "is_active": False
                 }
             )
+
+    # TODO: we need a revoke_old_sessions function
+    # to terminate all old session after changing password
 
     async def get_session(self, token: str) -> AuthSession:
         session = await self.db_repository.get_session_by_token(token)

@@ -8,12 +8,12 @@ from telegram import Update
 import os
 
 logger = logging.getLogger(__name__)
-fast_api = FastAPI()
+api_app = FastAPI()
 
 
 # region add the routes in this region #
-fast_api.include_router(auth.auth_router)
-fast_api.include_router(admin.admin_router)
+api_app.include_router(auth.auth_router)
+api_app.include_router(admin.admin_router)
 
 APP_DOMAIN = os.getenv('APP_DOMAIN', 'localhost')
 FRONTEND_ORIGINS = [
@@ -36,26 +36,26 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
 ]
 
-fast_api.add_middleware(
+api_app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-fast_api.add_middleware(
+api_app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=ALLOWED_HOSTS
 )
 # endregion -------------------------- #
 
 
-@fast_api.get("/")
+@api_app.get("/")
 def index():
     return Response("OK")
 
 
-@fast_api.post("/webhook")
+@api_app.post("/webhook")
 async def get_webhook(request: Request):
     update = Update.de_json(data=await request.json(), bot=application.bot)
 

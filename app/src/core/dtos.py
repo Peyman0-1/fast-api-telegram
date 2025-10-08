@@ -1,5 +1,6 @@
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict
+from pydantic import model_validator, field_validator
 from src.database.models import UserRole
 
 # region Auth
@@ -17,7 +18,7 @@ class UserCreateDto(BaseModel):
     last_name: Optional[str] = Field(None, max_length=64)
     password: Optional[bytes] = None
 
-    @field_validator('password')
+    @field_validator('password', mode='before')
     def encode_password(cls, v):
         if isinstance(v, str):
             return v.encode('utf-8')
@@ -34,14 +35,36 @@ class UserDto(BaseModel):
     role: Optional[UserRole] = None
     first_name: Optional[str] = Field(None, max_length=64)
     last_name: Optional[str] = Field(None, max_length=64)
-# endregion
+
+
+class ResetPasswordDto(BaseModel):
+    old_password: bytes
+    new_password: bytes
+    new_password_repeat: bytes
+
+    @field_validator(
+        'old_password',
+        'new_password',
+        'confirm_new_password',
+        mode='before'
+    )
+    def encode_passwords(cls, v):
+        if isinstance(v, str):
+            return v.encode('utf-8')
+        return v
+
+    @model_validator(mode='after')
+    def check_passwords_match(self):
+        if self.new_password != self.new_password_repeat:
+            raise ValueError("New password and confirmation do not match.")
+        return self
 
 
 class LoginDto(BaseModel):
     phone_number: str
     password: bytes
 
-    @field_validator('password')
+    @field_validator('password', mode='before')
     def encode_password(cls, v):
         if isinstance(v, str):
             return v.encode('utf-8')

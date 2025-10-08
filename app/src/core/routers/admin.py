@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.repositories import BaseRepository, UserRepository
 from src.database.models import User, AbstractBase, UserRole
 from src.core import dtos
-from src.core.dependencies import authorize_dep, db_session_dep
+from src.core.dependencies import session_authorize_dep, db_session_dep
 
 
 async def db_repository(
@@ -33,7 +33,7 @@ admin_router = APIRouter(
     prefix="/api/v1/admin",
     tags=["admin v1"],
     dependencies=[
-        Depends(authorize_dep([
+        Depends(session_authorize_dep([
             UserRole.ADMIN,
             UserRole.SUPERUSER
         ])),
@@ -120,9 +120,6 @@ async def create_new(
 ):
     dto_instance = await get_dto_instance(request, model_name)
 
-    # TODO: it's better that using a manager
-    # instead of using directly of dbrepository
-    # the manager class must have a base class for rules about functions
     # TODO: improve exeptions
     new_record = await db_repository.create(
         dto_instance.model_dump()  # type: ignore

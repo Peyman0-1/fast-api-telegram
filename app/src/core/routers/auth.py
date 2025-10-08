@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import AuthSession
 from src.core.custom_exceptions import InvalidCredentialsException
-from src.core.services import AuthService, UserService
+from src.core.services import AuthSesssionService, UserService
 from src.core.dependencies import auth_dep, db_session_dep
 from src.core import dtos
 import logging
@@ -30,7 +30,7 @@ async def login(
     login_data: dtos.LoginDto,
     user_agent: Annotated[str, Header()],
     user_manager: UserService = Depends(user_service),
-    auth_service: AuthService = Depends(auth_dep)
+    auth_service: AuthSesssionService = Depends(auth_dep)
 ) -> JSONResponse:
     try:
         auth_session: AuthSession = await auth_service.authenticate(
@@ -67,7 +67,7 @@ async def login(
 @auth_router.get("/me")
 async def get_me(
     token: Annotated[str | None, Cookie()] = None,
-    auth_manager: AuthService = Depends(auth_dep)
+    auth_manager: AuthSesssionService = Depends(auth_dep)
 ) -> dtos.UserDto:
     if not token:
         raise HTTPException(
@@ -89,7 +89,7 @@ async def get_me(
 @auth_router.post("/logout")
 async def logout(
     token: Annotated[str | None, Cookie()] = None,
-    auth_manager: AuthService = Depends(auth_dep)
+    auth_manager: AuthSesssionService = Depends(auth_dep)
 ) -> JSONResponse:
     if not token:
         raise HTTPException(

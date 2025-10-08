@@ -2,7 +2,7 @@ from typing import Annotated, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Cookie, Depends, HTTPException, status
 from app.src.database.models import AuthSession, UserRole
-from .services import AuthService
+from src.core.services import AuthSesssionService
 from src.database.config import SessionFactory
 
 
@@ -12,14 +12,14 @@ async def db_session_dep():
 
 
 async def auth_dep(session: AsyncSession = Depends(db_session_dep)):
-    service: AuthService = AuthService(session)
+    service: AuthSesssionService = AuthSesssionService(session)
     yield service
 
 
-def authorize_dep(acceptable_roles: List[UserRole]):
+def session_authorize_dep(acceptable_roles: List[UserRole]):
     async def _authorize(
             token: Annotated[str | None, Cookie()] = None,
-            auth_service: AuthService = Depends(auth_dep),
+            auth_service: AuthSesssionService = Depends(auth_dep),
     ) -> AuthSession:
         if not token:
             raise HTTPException(
