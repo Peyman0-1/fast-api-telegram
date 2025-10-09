@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    from core import runserver
+    from src.core import runserver
     from telegram_bot import application
 
     async with application:
         await application.start()
-        await runserver()
+    await runserver()
 
 
 if __name__ == "__main__":

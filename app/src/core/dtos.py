@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic import model_validator, field_validator
 from src.database.models import UserRole
@@ -45,7 +45,7 @@ class ResetPasswordDto(BaseModel):
     @field_validator(
         'old_password',
         'new_password',
-        'confirm_new_password',
+        'new_password_repeat',
         mode='before'
     )
     def encode_passwords(cls, v):
@@ -70,3 +70,52 @@ class LoginDto(BaseModel):
             return v.encode('utf-8')
         return v
 # endregion
+
+
+def simplify_schema_for_admin(schema: dict[str, Any]) -> dict[str, Any]:
+    defs = schema.get("$defs", {})
+    props = schema.get("properties", {})
+    required = set(schema.get("required", []))
+    simple = {}
+
+    for name, prop in props.items():
+        field = {}
+        field["required"] = name in required
+
+        # Handle anyOf
+        variant = None
+        nullable = False
+        if "anyOf" in prop:
+            for p in prop["anyOf"]:
+                if p.get("type") != "null":
+                    variant = p
+                else:
+                    nullable = True
+        else:
+            variant = prop
+            if prop.get("type") == "null":
+                nullable = True
+                variant = {}  # Empty if only null, but shouldn't happen
+
+        if variant:
+            if "$ref" in variant:
+                ref_name = variant["$ref"].split("/")[-1]
+                ref_def = defs.get(ref_name, {})
+                if "enum" in ref_def:
+                    field["type"] = "enum"
+                    field["choices"] = ref_def["enum"]
+                else:
+                    field["type"] = ref_def.get("type", "string")
+            else:
+                field["type"] = variant.get("type")
+
+            # Copy constraints from variant
+            for key in ["maxLength", "format"]:
+                if key in variant:
+                    field[key] = variant[key]
+
+        field["nullable"] = nullable
+
+        simple[name] = field
+
+    return simple

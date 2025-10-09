@@ -71,10 +71,13 @@ async def get_dto_instance(
 
 
 @admin_router.get("/", response_model=Dict[str, List[str]])
-async def get_models_name():
-    return JSONResponse({
-        "models": list(MODELS.keys())
-    })
+async def get_registered_schemas():
+    schemas = {}
+    for name, config in MODELS.items():
+        dto = config["dto"]
+        raw = dto.model_json_schema()
+        schemas[name] = dtos.simplify_schema_for_admin(raw)
+    return JSONResponse(schemas)
 
 
 class SortOrder(str, Enum):

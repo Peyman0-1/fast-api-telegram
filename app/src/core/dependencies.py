@@ -1,7 +1,7 @@
 from typing import Annotated, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Cookie, Depends, HTTPException, status
-from app.src.database.models import AuthSession, UserRole
+from src.database.models import AuthSession, UserRole
 from src.core.services import AuthSesssionService
 from src.database.config import SessionFactory
 

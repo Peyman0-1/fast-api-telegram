@@ -108,3 +108,11 @@ async def logout(
     response.delete_cookie("session_id")
 
     return response
+
+
+@auth_router.post("/reset-password")
+async def reset_password(
+    token: Annotated[str | None, Cookie()] = None,
+    auth_manager: AuthSesssionService = Depends(auth_dep)
+):
+    raise NotImplementedError()
