@@ -1,6 +1,6 @@
-from typing import Tuple, TypeVar, Generic, Type, Optional, List
+from typing import Tuple, TypeVar, Generic, Type, Optional, List, Dict, Any
 from .models import AbstractBase, User, AuthSession, get_utc_now
-from sqlalchemy import select, delete, and_, cast, String
+from sqlalchemy import select, delete, and_, cast, String, func, insert, or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +56,6 @@ class BaseRepository(Generic[T]):
                             cast(col, String).ilike(f"%{search}%")
                         )
                 if conditions:
-                    from sqlalchemy import or_
                     query = query.where(or_(*conditions))
 
             count_query = select(func.count()).select_from(query.subquery())
@@ -119,7 +118,6 @@ class BaseRepository(Generic[T]):
             await self.session.rollback()
             raise e
         else:
-
             await self.session.refresh(obj)
 
         return obj
@@ -131,14 +129,13 @@ class BaseRepository(Generic[T]):
 
         try:
             await self.session.delete(obj)
+            await self.session.commit()
         except SQLAlchemyError as e:
             self.logger.exception(
                 "Database error occurred during object deletion."
             )
             await self.session.rollback()
             raise e
-        else:
-            await self.session.commit()
         return True
 
     async def bulk_delete(self, list_ids: List[int]) -> None:
@@ -155,15 +152,16 @@ class BaseRepository(Generic[T]):
             )
             await self.session.rollback()
             raise e
-        else:
-            await self.session.commit()
 
     async def bulk_add(self, objects: List[dict]) -> None:
         try:
             stmt = insert(self.model).values(objects)
             await self.session.execute(stmt)
             await self.session.commit()
-        except Exception as e:
+        except SQLAlchemyError as e:
+            self.logger.exception(
+                "Database error occurred during bulk object creation."
+            )
             await self.session.rollback()
             raise e
 
@@ -179,23 +177,38 @@ class UserRepository(BaseRepository[User]):
         return user.scalar()
 
     async def create(self, obj_in: dict) -> User:
+        # Hash password if present
         if obj_in.get("password"):
-            obj_in["password"] = bcrypt.hashpw(
-                obj_in["password"], bcrypt.gensalt()
-            )
+            password = obj_in["password"]
+            # Encode to bytes if it's a string
+            if isinstance(password, str):
+                password = password.encode('utf-8')
+            obj_in["password"] = bcrypt.hashpw(password, bcrypt.gensalt())
         return await super().create(obj_in)
 
     async def update(self, id: int, obj_in: dict) -> Optional[User]:
+        # Hash password if present and different from current
         if obj_in.get("password"):
             user = await self.get_by_id(id)
-            if user and (user.password != obj_in["password"]):
-                obj_in["password"] = bcrypt.hashpw(
-                    obj_in["password"], bcrypt.gensalt()
-                )
+            if user:
+                new_password = obj_in["password"]
+                # Encode new password to bytes if it's a string
+                if isinstance(new_password, str):
+                    new_password = new_password.encode('utf-8')
+                
+                # Get current password as bytes
+                current_password = user.password
+                if isinstance(current_password, str):
+                    current_password = current_password.encode('utf-8')
+                
+                # Only hash if password is different
+                if current_password != new_password:
+                    obj_in["password"] = bcrypt.hashpw(new_password, bcrypt.gensalt())
+        
         return await super().update(id, obj_in)
 
 
-class AuthSessionRepository(BaseRepository):
+class AuthSessionRepository(BaseRepository[AuthSession]):
     def __init__(self, session: AsyncSession):
         super().__init__(session, model=AuthSession)
 
@@ -206,8 +219,7 @@ class AuthSessionRepository(BaseRepository):
             .where(
                 and_(
                     AuthSession.id == session_id,
-                    AuthSession.is_active.is_(True),
-                    AuthSession.expires_at > get_utc_now()
+                    AuthSession.is_active.is_(True)
                 )
             )
         )
@@ -220,8 +232,7 @@ class AuthSessionRepository(BaseRepository):
             .where(
                 and_(
                     AuthSession.token == token,
-                    AuthSession.is_active.is_(True),
-                    AuthSession.expires_at > get_utc_now()
+                    AuthSession.is_active.is_(True)
                 )
             )
         )
