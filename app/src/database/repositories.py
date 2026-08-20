@@ -1,4 +1,4 @@
-from typing import TypeVar, Generic, Type, Optional, List
+from typing import Tuple, TypeVar, Generic, Type, Optional, List
 from .models import AbstractBase, User, AuthSession, get_utc_now
 from sqlalchemy import select, delete, and_, cast, String
 from sqlalchemy.orm import joinedload
@@ -34,11 +34,18 @@ class BaseRepository(Generic[T]):
         sortby: Optional[str] = None,
         direction: Optional[str] = None,
         search: Optional[str] = None,
-        search_fields: list[str] | None = None
-    ) -> List[T]:
+        search_fields: list[str] | None = None,
+        exact_filter: Optional[Dict[str, Any]] = None
+    ) -> Tuple[List[T], int]:
         offset = (page - 1) * page_size
         try:
             query = select(self.model)
+
+            if exact_filter:
+                for field, value in exact_filter.items():
+                    col = getattr(self.model, field, None)
+                    if col is not None:
+                        query = query.where(col == value)
 
             if search and search_fields:
                 conditions = []
@@ -52,6 +59,10 @@ class BaseRepository(Generic[T]):
                     from sqlalchemy import or_
                     query = query.where(or_(*conditions))
 
+            count_query = select(func.count()).select_from(query.subquery())
+            total_count_result = await self.session.execute(count_query)
+            total_count = total_count_result.scalar() or 0
+
             if sortby:
                 col = getattr(self.model, sortby, None)
                 if col is not None:
@@ -63,7 +74,8 @@ class BaseRepository(Generic[T]):
             query = query.offset(offset).limit(page_size)
 
             result = await self.session.execute(query)
-            return list(result.scalars().all())
+
+            return list(result.scalars().all()), total_count
 
         except SQLAlchemyError as e:
             self.logger.exception(
@@ -148,13 +160,10 @@ class BaseRepository(Generic[T]):
 
     async def bulk_add(self, objects: List[dict]) -> None:
         try:
-            instances = [self.model(**obj) for obj in objects]
-            self.session.add_all(instances)
+            stmt = insert(self.model).values(objects)
+            await self.session.execute(stmt)
             await self.session.commit()
-        except SQLAlchemyError as e:
-            self.logger.exception(
-                "Database error occurred during bulk object addition."
-            )
+        except Exception as e:
             await self.session.rollback()
             raise e
 
